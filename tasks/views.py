@@ -1,17 +1,38 @@
 from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth import login, authenticate
+from django.contrib.auth import login, authenticate, logout
 from django.contrib.auth.models import User
-from .models import Task
+from .models import Task, Profile
 from django.utils import timezone
 from datetime import datetime
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 import json
 from .forms import TaskForm 
+from django.contrib.auth.decorators import login_required
+from .forms import ProfileUpdateForm
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 
 
 def home(request):
     tasks = Task.objects.filter(user=request.user).order_by("scheduled_date")
+    # Filtering Logic
+    filter_option = request.GET.get('filter')
+    if filter_option == 'completed':
+        tasks = tasks.filter(completed=True)
+    elif filter_option == 'pending':
+        tasks = tasks.filter(completed=False)
+
+    # Sorting Logic
+    sort_option = request.GET.get('sort')
+    if sort_option == 'a_to_z':
+        tasks = tasks.order_by('title')  # Sort alphabetically A-Z
+    elif sort_option == 'z_to_a':
+        tasks = tasks.order_by('-title')  # Sort alphabetically Z-A
+    elif sort_option == 'newest':
+        tasks = tasks.order_by('-created_at')  # Sort by newest first
+    elif sort_option == 'oldest':
+        tasks = tasks.order_by('created_at')  # Sort by oldest first
     return render(request, 'tasks1/home.html', {'tasks': tasks})
 
 def welcomepage(request):
@@ -57,8 +78,8 @@ def completedtasks(request):
 
     return render(request, "tasks1/completedtasks.html", {"completedtasks": completedtasks})
 
-def settings(request):
-    return render(request, "tasks1/settings.html")
+def appsettings(request):
+    return render(request, "tasks1/appsettings.html")
 def add_task(request):
     if request.method == "POST":
         title = request.POST.get("task_title")
@@ -129,3 +150,41 @@ def delete_task(request, task_id):
         return redirect("home")
     
     return render(request, "tasks/delete_task.html", {"task": task})
+
+
+@login_required
+def profile(request):
+    # Ensure user has a profile
+    profile, created = Profile.objects.get_or_create(user=request.user)
+
+    if request.method == "POST":
+        form = ProfileUpdateForm(request.POST, request.FILES, instance=profile)
+        if form.is_valid():
+            form.save()
+            return redirect("profile")  # Reload page after saving
+    else:
+        form = ProfileUpdateForm(instance=profile)
+
+    return render(request, "tasks1/profile.html", {"form": form})
+
+@receiver(post_save, sender=User)
+def create_profile(sender, instance, created, **kwargs):
+    if created:
+        Profile.objects.create(user=instance)
+
+@receiver(post_save, sender=User)
+def save_profile(sender, instance, **kwargs):
+    instance.profile.save()
+
+
+def user_logout(request):
+    logout(request)  # Logs out the user
+    return redirect('welcomepage')  # Redirects to the welcome page
+
+def search_tasks(request):
+    query = request.GET.get('q', '')
+    tasks = Task.objects.filter(user=request.user, title__icontains=query)  # Case-insensitive search
+
+    task_list = [{'id': task.id, 'title': task.title, 'completed': task.completed} for task in tasks]
+
+    return JsonResponse({'tasks': task_list})

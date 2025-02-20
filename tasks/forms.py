@@ -9,3 +9,12 @@ class TaskForm(forms.ModelForm):
             "scheduled_date": forms.DateTimeInput(attrs={"type": "datetime-local"}),
             "reminder": forms.DateTimeInput(attrs={"type": "datetime-local"}),
         }
+
+
+from django import forms
+from .models import Profile
+
+class ProfileUpdateForm(forms.ModelForm):
+    class Meta:
+        model = Profile
+        fields = ["image"]
